@@ -1,0 +1,25 @@
+
+name: Sync Notion Projects
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Notion synchronization
+        env:
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "X-Sync-Token: ${SYNC_SECRET}" \
+            "https://notion-project-dashboard-api.onrender.com/api/sync/notion"
