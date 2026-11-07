@@ -1,11 +1,12 @@
-
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 import httpx
 
+from app.core.config import settings
 from app.database.models import Project
-from collections.abc import Sequence
+
 
 GITHUB_API_URL = "https://api.github.com"
 
@@ -22,7 +23,7 @@ def parse_github_repository(
     try:
         parsed = urlsplit(repository_url.strip())
 
-        if parsed.hostname != "github.com":
+        if parsed.hostname not in {"github.com", "www.github.com"}:
             return None
 
         parts = [
@@ -49,10 +50,33 @@ def parse_github_repository(
         return None
 
 
+def get_retry_delay(response: httpx.Response) -> timedelta:
+    reset_timestamp = response.headers.get("X-RateLimit-Reset")
+
+    if reset_timestamp:
+        try:
+            reset_at = datetime.fromtimestamp(
+                int(reset_timestamp),
+                tz=timezone.utc,
+            )
+
+            delay = reset_at - datetime.now(timezone.utc)
+
+            return max(
+                RETRY_DELAY,
+                delay + timedelta(seconds=5),
+            )
+
+        except (ValueError, OverflowError):
+            pass
+
+    return RETRY_DELAY
+
+
 def refresh_project_github_data(
     project: Project,
     client: httpx.Client,
-) -> bool:
+) -> tuple[str, timedelta | None]:
     now = datetime.now(timezone.utc)
 
     if not project.repository:
@@ -64,20 +88,21 @@ def refresh_project_github_data(
         project.github_pushed_at = None
         project.github_last_checked_at = None
 
-        return changed
+        return ("cleared" if changed else "skipped"), None
 
     if (
         project.github_last_checked_at
         and now - project.github_last_checked_at < CACHE_DURATION
     ):
-        return False
+        return "cached", None
 
     repository = parse_github_repository(project.repository)
 
     if repository is None:
         project.github_pushed_at = None
         project.github_last_checked_at = now
-        return True
+
+        return "invalid", None
 
     owner, repository_name = repository
 
@@ -88,13 +113,31 @@ def refresh_project_github_data(
 
     try:
         response = client.get(url)
+
+        if (
+            response.status_code == 429
+            or (
+                response.status_code == 403
+                and response.headers.get("X-RateLimit-Remaining") == "0"
+            )
+        ):
+            delay = get_retry_delay(response)
+
+            project.github_last_checked_at = (
+                now - CACHE_DURATION + delay
+            )
+
+            return "rate_limited", delay
+
         response.raise_for_status()
 
         data = response.json()
         pushed_at = data.get("pushed_at")
 
-        if not pushed_at:
-            raise ValueError("GitHub response has no pushed_at value.")
+        if not isinstance(pushed_at, str):
+            raise ValueError(
+                "GitHub response has no valid pushed_at value."
+            )
 
         parsed_timestamp = datetime.fromisoformat(
             pushed_at.replace("Z", "+00:00")
@@ -108,40 +151,104 @@ def refresh_project_github_data(
         project.github_pushed_at = parsed_timestamp
         project.github_last_checked_at = now
 
-        return True
+        return "updated", None
 
-    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
         # Retry failed requests after 15 minutes instead of
         # repeatedly calling GitHub on every dashboard refresh.
         project.github_last_checked_at = (
             now - CACHE_DURATION + RETRY_DELAY
         )
 
-        return True
+        return "failed", None
 
 
-def refresh_github_projects(projects: Sequence[Project]) -> None:
+def refresh_github_projects(
+    projects: Sequence[Project],
+) -> dict[str, int]:
+    now = datetime.now(timezone.utc)
+
     projects_to_check = [
         project
         for project in projects
         if (
             not project.github_last_checked_at
-            or datetime.now(timezone.utc)
-            - project.github_last_checked_at
-            >= CACHE_DURATION
+            or now - project.github_last_checked_at >= CACHE_DURATION
         )
     ]
 
+    results = {
+        "total": len(projects),
+        "checked": 0,
+        "updated": 0,
+        "failed": 0,
+        "invalid": 0,
+        "cleared": 0,
+        "cached": len(projects) - len(projects_to_check),
+        "deferred": 0,
+    }
+
     if not projects_to_check:
-        return
+        return results
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Notion-Project-Dashboard",
+    }
+
+    if settings.github_token:
+        headers["Authorization"] = (
+            f"Bearer {settings.github_token}"
+        )
 
     with httpx.Client(
         timeout=10.0,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "Notion-Project-Dashboard",
-        },
+        headers=headers,
     ) as client:
-        for project in projects_to_check:
-            refresh_project_github_data(project, client)
+        for index, project in enumerate(projects_to_check):
+            status, retry_delay = refresh_project_github_data(
+                project,
+                client,
+            )
+
+            if status == "rate_limited":
+                results["failed"] += 1
+
+                remaining_projects = projects_to_check[index + 1:]
+
+                retry_at = (
+                    now - CACHE_DURATION + retry_delay
+                    if retry_delay
+                    else now - CACHE_DURATION + RETRY_DELAY
+                )
+
+                for remaining_project in remaining_projects:
+                    remaining_project.github_last_checked_at = retry_at
+
+                results["deferred"] += len(remaining_projects)
+                break
+
+            if status == "cached":
+                results["cached"] += 1
+
+            elif status == "updated":
+                results["updated"] += 1
+                results["checked"] += 1
+
+            elif status == "failed":
+                results["failed"] += 1
+                results["checked"] += 1
+
+            elif status == "invalid":
+                results["invalid"] += 1
+                results["checked"] += 1
+
+            elif status == "cleared":
+                results["cleared"] += 1
+                results["checked"] += 1
+
+            elif status == "skipped":
+                results["checked"] += 1
+
+    return results

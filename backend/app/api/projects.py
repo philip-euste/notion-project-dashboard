@@ -1,4 +1,3 @@
-
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -16,7 +15,6 @@ from app.schemas.project import (
     ProjectUpdate,
     validate_status_pair,
 )
-from app.services.github_client import refresh_github_projects
 from app.services.notion_client import (
     create_notion_page,
     update_notion_page,
@@ -47,12 +45,6 @@ def get_projects(db: Session = Depends(get_db)):
     statement = select(Project).order_by(Project.created_at.desc())
     projects = db.scalars(statement).all()
 
-    try:
-        refresh_github_projects(projects)
-        db.commit()
-    except Exception:
-        db.rollback()
-
     return projects
 
 
@@ -62,12 +54,6 @@ def get_project(project_id: UUID, db: Session = Depends(get_db)):
 
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    try:
-        refresh_github_projects([project])
-        db.commit()
-    except Exception:
-        db.rollback()
 
     return project
 

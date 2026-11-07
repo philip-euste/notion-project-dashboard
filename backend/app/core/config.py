@@ -1,4 +1,3 @@
-
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +17,8 @@ class Settings(BaseSettings):
     notion_webhook_secret: str | None = None
 
     sync_secret: str | None = None
+
+    github_token: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

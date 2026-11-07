@@ -1,5 +1,4 @@
-
-name: Sync Notion Projects
+name: Sync Notion and GitHub Projects
 
 on:
   schedule:
@@ -11,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  sync:
+  sync-notion:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,3 +22,16 @@ jobs:
             --request POST \
             --header "X-Sync-Token: ${SYNC_SECRET}" \
             "https://notion-project-dashboard-api.onrender.com/api/sync/notion"
+
+  sync-github:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger GitHub synchronization
+        env:
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "X-Sync-Token: ${SYNC_SECRET}" \
+            "https://notion-project-dashboard-api.onrender.com/api/sync/github"
