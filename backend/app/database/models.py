@@ -1,3 +1,4 @@
+
 import uuid
 
 from datetime import date, datetime
@@ -44,7 +45,6 @@ class Project(Base):
         ),
     )
 
-    # Internal identification
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
         primary_key=True,
@@ -57,7 +57,6 @@ class Project(Base):
         nullable=True,
     )
 
-    # Notion properties
     name: Mapped[str | None] = mapped_column(
         String(150),
         nullable=True,
@@ -107,12 +106,24 @@ class Project(Base):
         nullable=True,
     )
 
+    # Date maintained by Notion.
     last_updated: Mapped[date | None] = mapped_column(
         Date,
         nullable=True,
     )
 
-    # Internal synchronization timestamps
+    # GitHub synchronization data.
+    github_pushed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    github_last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # Internal synchronization timestamps.
     last_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -130,3 +141,15 @@ class Project(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+    @property
+    def displayed_last_updated(self) -> date | None:
+        dates = []
+
+        if self.last_updated:
+            dates.append(self.last_updated)
+
+        if self.github_pushed_at:
+            dates.append(self.github_pushed_at.date())
+
+        return max(dates) if dates else None

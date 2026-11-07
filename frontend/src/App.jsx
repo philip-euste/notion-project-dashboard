@@ -341,14 +341,16 @@ function App() {
 
       case "date-desc":
         result.sort((a, b) =>
-          (b.last_updated || "").localeCompare(a.last_updated || "")
+          (b.displayed_last_updated || "").localeCompare(
+            a.displayed_last_updated || ""
+          )
         );
         break;
 
       case "date-asc":
         result.sort((a, b) =>
-          (a.last_updated || "9999-12-31").localeCompare(
-            b.last_updated || "9999-12-31"
+          (a.displayed_last_updated || "9999-12-31").localeCompare(
+            b.displayed_last_updated || "9999-12-31"
           )
         );
         break;
@@ -690,8 +692,8 @@ function App() {
                     <td>{project.ide?.join(", ") || "—"}</td>
                     <td>{project.skills?.join(", ") || "—"}</td>
                     <td>
-                      {project.last_updated
-                        ? project.last_updated.slice(0, 10)
+                      {project.displayed_last_updated
+                        ? project.displayed_last_updated.slice(0, 10)
                         : "—"}
                     </td>
                     <td>

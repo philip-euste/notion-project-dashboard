@@ -1,3 +1,4 @@
+
 from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
@@ -144,6 +145,11 @@ class ProjectUpdate(BaseModel):
 class ProjectResponse(ProjectBase):
     id: UUID
     notion_page_id: str | None
+
+    github_pushed_at: datetime | None
+    github_last_checked_at: datetime | None
+    displayed_last_updated: date | None
+
     last_synced_at: datetime | None
     created_at: datetime
     updated_at: datetime

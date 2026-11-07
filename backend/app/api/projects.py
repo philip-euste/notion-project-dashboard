@@ -16,6 +16,7 @@ from app.schemas.project import (
     ProjectUpdate,
     validate_status_pair,
 )
+from app.services.github_client import refresh_github_projects
 from app.services.notion_client import (
     create_notion_page,
     update_notion_page,
@@ -44,7 +45,15 @@ def get_project_data(project: Project) -> dict:
 @router.get("/", response_model=list[ProjectResponse])
 def get_projects(db: Session = Depends(get_db)):
     statement = select(Project).order_by(Project.created_at.desc())
-    return db.scalars(statement).all()
+    projects = db.scalars(statement).all()
+
+    try:
+        refresh_github_projects(projects)
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    return projects
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -53,6 +62,12 @@ def get_project(project_id: UUID, db: Session = Depends(get_db)):
 
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        refresh_github_projects([project])
+        db.commit()
+    except Exception:
+        db.rollback()
 
     return project
 
@@ -124,7 +139,6 @@ def update_project(
             detail=str(error),
         ) from error
 
-    # Build the complete updated project without modifying the ORM object yet.
     project_values = get_project_data(project)
     project_values.update(updates)
 
@@ -146,9 +160,17 @@ def update_project(
             detail="Could not update the project in Notion.",
         ) from error
 
-    # Apply database changes after the Notion request succeeds.
+    repository_changed = (
+        "repository" in updates
+        and updates["repository"] != project.repository
+    )
+
     for field, value in updates.items():
         setattr(project, field, value)
+
+    if repository_changed:
+        project.github_pushed_at = None
+        project.github_last_checked_at = None
 
     project.notion_page_id = notion_page_id
     project.last_synced_at = datetime.now(timezone.utc)
