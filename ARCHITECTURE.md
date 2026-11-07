@@ -1,5 +1,6 @@
 Notion -> Python -> Supabase -> Website
 Render + Cloudflare Pages + Neon + Github Actions
+
 # Final 
 Layer|	Selected technology|	Role
 |---|---|---|

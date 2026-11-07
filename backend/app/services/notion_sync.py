@@ -155,6 +155,13 @@ def map_notion_project(
 def sync_notion_projects(db: Session) -> dict[str, int]:
     notion_projects = fetch_notion_projects()
 
+    # Never delete records based on an unexpectedly empty response.
+    if not notion_projects:
+        raise ValueError(
+            "Notion returned zero projects. Synchronization aborted "
+            "to prevent accidental deletion."
+        )
+
     notion_page_ids = [
         project["notion_page_id"]
         for project in notion_projects
@@ -171,8 +178,18 @@ def sync_notion_projects(db: Session) -> dict[str, int]:
         for project in existing_projects
     }
 
+    # Find database records whose Notion pages no longer exist.
+    stale_projects = db.scalars(
+        select(Project).where(
+            Project.notion_page_id.is_not(None),
+            Project.notion_page_id.not_in(notion_page_ids),
+        )
+    ).all()
+
     created = 0
     updated = 0
+    deleted = len(stale_projects)
+
     sync_timestamp = datetime.now(timezone.utc)
 
     try:
@@ -195,6 +212,10 @@ def sync_notion_projects(db: Session) -> dict[str, int]:
                 existing.last_synced_at = sync_timestamp
                 updated += 1
 
+        # Delete only records linked to pages absent from Notion.
+        for project in stale_projects:
+            db.delete(project)
+
         db.commit()
 
     except Exception:
@@ -205,4 +226,5 @@ def sync_notion_projects(db: Session) -> dict[str, int]:
         "total": len(notion_projects),
         "created": created,
         "updated": updated,
+        "deleted": deleted,
     }
