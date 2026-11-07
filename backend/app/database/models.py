@@ -1,59 +1,53 @@
 import uuid
 
-from datetime import date, datetime
+from datetime import datetime
 
 from sqlalchemy import (
-    Date,
+    CheckConstraint,
     DateTime,
     String,
     Text,
     Uuid,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.connection import Base
 
+from sqlalchemy import text
 
 class Project(Base):
     __tablename__ = "projects"
 
+    __table_args__ = (
+        CheckConstraint(
+            """
+            (status_group = 'To-do' AND status IN ('Unknown', 'Conceptualized'))
+            OR
+            (status_group = 'In progress' AND status IN (
+                'Make it WORK',
+                'Make it RIGHT',
+                'Make it FAST',
+                'Github Private',
+                'Updateable'
+            ))
+            OR
+            (status_group = 'Complete' AND status IN (
+                'GitHub Public',
+                'File Transferred',
+                'Junk'
+            ))
+            """,
+            name="valid_project_status",
+        ),
+    )
+
+    # Internal identification
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
-    )
-
-    name: Mapped[str] = mapped_column(
-        String(150),
-        nullable=False,
-    )
-
-    description: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-    )
-
-    status: Mapped[str] = mapped_column(
-        String(30),
-        default="not_started",
-        nullable=False,
-    )
-
-    priority: Mapped[str] = mapped_column(
-        String(20),
-        default="medium",
-        nullable=False,
-    )
-
-    start_date: Mapped[date | None] = mapped_column(
-        Date,
-        nullable=True,
-    )
-
-    due_date: Mapped[date | None] = mapped_column(
-        Date,
-        nullable=True,
     )
 
     notion_page_id: Mapped[str | None] = mapped_column(
@@ -62,6 +56,62 @@ class Project(Base):
         nullable=True,
     )
 
+    # Notion properties
+    name: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
+    )
+
+    status_group: Mapped[str] = mapped_column(
+        String(30),
+        default="To-do",
+        server_default=text("'To-do'"),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        default="Unknown",
+        server_default=text("'Unknown'"),
+        nullable=False,
+    )
+
+    next_possible_action: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    potential: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    priority: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    repository: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    ide: Mapped[list[str] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    skills: Mapped[list[str] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    last_updated: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # Internal synchronization timestamps
     last_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
