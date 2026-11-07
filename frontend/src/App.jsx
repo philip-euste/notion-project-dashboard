@@ -48,7 +48,7 @@ const INITIAL_FORM = {
   last_updated: "",
 };
 
-const REFRESH_INTERVAL = 30_000;
+const REFRESH_INTERVAL = 5_000;
 
 function App() {
   const [projects, setProjects] = useState([]);
