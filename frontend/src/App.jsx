@@ -4,6 +4,7 @@ import {
   getProjects,
   createProject,
   updateProject,
+  deleteProject,
 } from "./services/api";
 import "./App.css";
 
@@ -58,6 +59,7 @@ function App() {
   const [error, setError] = useState(null);
   const [form, setForm] = useState(INITIAL_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingProjectId, setDeletingProjectId] = useState(null);
   const [success, setSuccess] = useState("");
   const [editingProjectId, setEditingProjectId] = useState(null);
 
@@ -204,6 +206,37 @@ function App() {
       setError(error.message);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleDelete(project) {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${project.name || "Untitled project"}"? This will also archive it in Notion.`
+    );
+
+    if (!confirmed) return;
+
+    setDeletingProjectId(project.id);
+    setError(null);
+    setSuccess("");
+
+    try {
+      await deleteProject(project.id);
+
+      setProjects((previous) =>
+        previous.filter((item) => item.id !== project.id)
+      );
+
+      if (editingProjectId === project.id) {
+        setEditingProjectId(null);
+        setForm(INITIAL_FORM);
+      }
+
+      setSuccess("Project deleted successfully.");
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setDeletingProjectId(null);
     }
   }
 
@@ -430,8 +463,19 @@ function App() {
                     <button
                       type="button"
                       onClick={() => handleEdit(project)}
+                      disabled={deletingProjectId !== null}
                     >
                       Edit
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(project)}
+                      disabled={deletingProjectId !== null}
+                    >
+                      {deletingProjectId === project.id
+                        ? "Deleting..."
+                        : "Delete"}
                     </button>
                   </td>
                 </tr>
