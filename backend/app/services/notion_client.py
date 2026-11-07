@@ -77,7 +77,7 @@ def build_notion_properties(
         "Repository": {
             "url": project.get("repository")
         },
-        "Last Updated": {
+        "Locally Last Updated": {
             "date": (
                 {"start": last_updated}
                 if last_updated

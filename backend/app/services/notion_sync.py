@@ -129,7 +129,7 @@ def map_notion_project(
         for item in properties["Skills Used"]["multi_select"]
     ]
 
-    date_data = properties["Last Updated"]["date"]
+    date_data = properties["Locally Last Updated"]["date"]
 
     last_updated = (
         date.fromisoformat(date_data["start"][:10])
