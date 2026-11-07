@@ -1,21 +1,22 @@
 import uuid
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     String,
     Text,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.connection import Base
 
-from sqlalchemy import text
 
 class Project(Base):
     __tablename__ = "projects"
@@ -106,8 +107,8 @@ class Project(Base):
         nullable=True,
     )
 
-    last_updated: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
+    last_updated: Mapped[date | None] = mapped_column(
+        Date,
         nullable=True,
     )
 
