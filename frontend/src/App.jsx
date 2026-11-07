@@ -62,6 +62,7 @@ function App() {
   const [deletingProjectId, setDeletingProjectId] = useState(null);
   const [success, setSuccess] = useState("");
   const [editingProjectId, setEditingProjectId] = useState(null);
+  const [copiedProjectId, setCopiedProjectId] = useState(null);
 
   const [search, setSearch] = useState("");
   const [statusFilters, setStatusFilters] = useState([]);
@@ -125,6 +126,15 @@ function App() {
         [name]: value,
       };
     });
+  }
+
+  async function handleCopyProjectId(projectId) {
+    try {
+      await navigator.clipboard.writeText(projectId);
+      setCopiedProjectId(projectId);
+    } catch {
+      setError("Could not copy Project ID. Check your browser permissions.");
+    }
   }
 
   function handleEdit(project) {
@@ -649,6 +659,7 @@ function App() {
           <table>
             <thead>
               <tr>
+                <th>ID</th>
                 <th>Project</th>
                 <th>Status</th>
                 <th>Priority</th>
@@ -668,6 +679,34 @@ function App() {
 
                 return (
                   <tr key={project.id}>
+                    <td>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <code title={project.id}>
+                          {project.id.slice(0, 2)}…
+                        </code>
+
+                        <button
+                          type="button"
+                          onClick={() => handleCopyProjectId(project.id)}
+                          title="Copy full Project ID"
+                          aria-label={`Copy full Project ID ${project.id}`}
+                          style={{
+                            padding: "2px 5px",
+                            minWidth: "auto",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {copiedProjectId === project.id ? "✓" : "⧉"}
+                        </button>
+                      </span>
+                    </td>
                     <td className="project-name">
                       {isValidRepositoryUrl ? (
                         <a
