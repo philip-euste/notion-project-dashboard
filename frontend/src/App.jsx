@@ -64,8 +64,10 @@ function App() {
   const [editingProjectId, setEditingProjectId] = useState(null);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [priorityFilter, setPriorityFilter] = useState("All");
+  const [statusFilters, setStatusFilters] = useState([]);
+  const [priorityFilters, setPriorityFilters] = useState([]);
+  const [ideFilters, setIdeFilters] = useState([]);
+  const [skillFilters, setSkillFilters] = useState([]);
   const [sortOrder, setSortOrder] = useState("default");
 
   useEffect(() => {
@@ -74,7 +76,6 @@ function App() {
 
     async function loadProjects() {
       if (isFetching) return;
-
       isFetching = true;
 
       try {
@@ -99,10 +100,7 @@ function App() {
 
     loadProjects();
 
-    const interval = setInterval(
-      loadProjects,
-      REFRESH_INTERVAL
-    );
+    const interval = setInterval(loadProjects, REFRESH_INTERVAL);
 
     return () => {
       isMounted = false;
@@ -155,6 +153,22 @@ function App() {
     setForm(INITIAL_FORM);
     setError(null);
     setSuccess("");
+  }
+
+  function toggleFilter(value, filters, setFilters) {
+    setFilters((previous) =>
+      previous.includes(value)
+        ? previous.filter((item) => item !== value)
+        : [...previous, value]
+    );
+  }
+
+  function clearFilters() {
+    setSearch("");
+    setStatusFilters([]);
+    setPriorityFilters([]);
+    setIdeFilters([]);
+    setSkillFilters([]);
   }
 
   async function handleSubmit(event) {
@@ -245,6 +259,22 @@ function App() {
     }
   }
 
+  const ideOptions = useMemo(
+    () =>
+      [...new Set(projects.flatMap((project) => project.ide || []))]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    [projects]
+  );
+
+  const skillOptions = useMemo(
+    () =>
+      [...new Set(projects.flatMap((project) => project.skills || []))]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    [projects]
+  );
+
   const filteredProjects = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
@@ -270,14 +300,30 @@ function App() {
         );
 
       const matchesStatus =
-        statusFilter === "All" ||
-        project.status_group === statusFilter;
+        statusFilters.length === 0 ||
+        statusFilters.includes(project.status_group);
 
       const matchesPriority =
-        priorityFilter === "All" ||
-        project.priority === priorityFilter;
+        priorityFilters.length === 0 ||
+        priorityFilters.includes(project.priority);
 
-      return matchesSearch && matchesStatus && matchesPriority;
+      const matchesIde =
+        ideFilters.length === 0 ||
+        (project.ide || []).some((ide) => ideFilters.includes(ide));
+
+      const matchesSkills =
+        skillFilters.length === 0 ||
+        (project.skills || []).some((skill) =>
+          skillFilters.includes(skill)
+        );
+
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesPriority &&
+        matchesIde &&
+        matchesSkills
+      );
     });
 
     switch (sortOrder) {
@@ -312,7 +358,15 @@ function App() {
     }
 
     return result;
-  }, [projects, search, statusFilter, priorityFilter, sortOrder]);
+  }, [
+    projects,
+    search,
+    statusFilters,
+    priorityFilters,
+    ideFilters,
+    skillFilters,
+    sortOrder,
+  ]);
 
   const counts = {
     total: projects.length,
@@ -478,8 +532,12 @@ function App() {
 
           <button type="submit" disabled={submitting}>
             {submitting
-              ? editingProjectId ? "Updating..." : "Creating..."
-              : editingProjectId ? "Update Project" : "Create Project"}
+              ? editingProjectId
+                ? "Updating..."
+                : "Creating..."
+              : editingProjectId
+                ? "Update Project"
+                : "Create Project"}
           </button>
 
           {editingProjectId && (
@@ -515,43 +573,66 @@ function App() {
             aria-label="Search projects"
           />
 
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            aria-label="Filter by status group"
-          >
-            <option value="All">All Status Groups</option>
-            {Object.keys(STATUS_OPTIONS).map((group) => (
-              <option key={group} value={group}>
-                {group}
-              </option>
-            ))}
-          </select>
+          <label>
+            Sort By
+            <select
+              value={sortOrder}
+              onChange={(event) => setSortOrder(event.target.value)}
+              aria-label="Sort projects"
+            >
+              <option value="default">Default Order</option>
+              <option value="name-asc">Name (A–Z)</option>
+              <option value="name-desc">Name (Z–A)</option>
+              <option value="date-desc">Last Updated (Newest)</option>
+              <option value="date-asc">Last Updated (Oldest)</option>
+            </select>
+          </label>
+        </div>
 
-          <select
-            value={priorityFilter}
-            onChange={(event) => setPriorityFilter(event.target.value)}
-            aria-label="Filter by priority"
-          >
-            <option value="All">All Priorities</option>
-            {PRIORITY_OPTIONS.map((priority) => (
-              <option key={priority} value={priority}>
-                {priority}
-              </option>
-            ))}
-          </select>
+        <div className="filter-bar">
+          <FilterDropdown
+            title="Status Group"
+            options={Object.keys(STATUS_OPTIONS)}
+            selected={statusFilters}
+            onToggle={(value) =>
+              toggleFilter(value, statusFilters, setStatusFilters)
+            }
+          />
 
-          <select
-            value={sortOrder}
-            onChange={(event) => setSortOrder(event.target.value)}
-            aria-label="Sort projects"
+          <FilterDropdown
+            title="Priority"
+            options={PRIORITY_OPTIONS}
+            selected={priorityFilters}
+            onToggle={(value) =>
+              toggleFilter(value, priorityFilters, setPriorityFilters)
+            }
+          />
+
+          <FilterDropdown
+            title="IDE"
+            options={ideOptions}
+            selected={ideFilters}
+            onToggle={(value) =>
+              toggleFilter(value, ideFilters, setIdeFilters)
+            }
+          />
+
+          <FilterDropdown
+            title="Skills"
+            options={skillOptions}
+            selected={skillFilters}
+            onToggle={(value) =>
+              toggleFilter(value, skillFilters, setSkillFilters)
+            }
+          />
+
+          <button
+            type="button"
+            className="clear-filters"
+            onClick={clearFilters}
           >
-            <option value="default">Default Order</option>
-            <option value="name-asc">Name (A–Z)</option>
-            <option value="name-desc">Name (Z–A)</option>
-            <option value="date-desc">Last Updated (Newest)</option>
-            <option value="date-asc">Last Updated (Oldest)</option>
-          </select>
+            Clear Filters
+          </button>
         </div>
 
         <p className="result-count">
@@ -572,47 +653,105 @@ function App() {
                 <th>Potential</th>
                 <th>IDE</th>
                 <th>Skills</th>
+                <th>Last Updated</th>
                 <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {filteredProjects.map((project) => (
-                <tr key={project.id}>
-                  <td className="project-name">
-                    {project.name || "Untitled project"}
-                  </td>
-                  <td>{project.status || "—"}</td>
-                  <td>{project.priority || "—"}</td>
-                  <td>{project.potential || "—"}</td>
-                  <td>{project.ide?.join(", ") || "—"}</td>
-                  <td>{project.skills?.join(", ") || "—"}</td>
-                  <td>
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(project)}
-                      disabled={deletingProjectId !== null}
-                    >
-                      Edit
-                    </button>
+              {filteredProjects.map((project) => {
+                const repositoryUrl = project.repository?.trim();
+                const isValidRepositoryUrl =
+                  /^https?:\/\//i.test(repositoryUrl || "");
 
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(project)}
-                      disabled={deletingProjectId !== null}
-                    >
-                      {deletingProjectId === project.id
-                        ? "Deleting..."
-                        : "Delete"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                return (
+                  <tr key={project.id}>
+                    <td className="project-name">
+                      {isValidRepositoryUrl ? (
+                        <a
+                          href={repositoryUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            color: "inherit",
+                            textDecoration: "underline",
+                            textUnderlineOffset: "3px",
+                          }}
+                        >
+                          {project.name || "Untitled project"}
+                        </a>
+                      ) : (
+                        project.name || "Untitled project"
+                      )}
+                    </td>
+                    <td>{project.status || "—"}</td>
+                    <td>{project.priority || "—"}</td>
+                    <td>{project.potential || "—"}</td>
+                    <td>{project.ide?.join(", ") || "—"}</td>
+                    <td>{project.skills?.join(", ") || "—"}</td>
+                    <td>
+                      {project.last_updated
+                        ? project.last_updated.slice(0, 10)
+                        : "—"}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(project)}
+                        disabled={deletingProjectId !== null}
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(project)}
+                        disabled={deletingProjectId !== null}
+                      >
+                        {deletingProjectId === project.id
+                          ? "Deleting..."
+                          : "Delete"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </section>
     </main>
+  );
+}
+
+function FilterDropdown({ title, options, selected, onToggle }) {
+  return (
+    <details className="filter-dropdown">
+      <summary>
+        {title}
+        <span className="filter-count">
+          {selected.length > 0 ? selected.length : "All"}
+        </span>
+        <span className="filter-arrow">⌄</span>
+      </summary>
+
+      <div className="filter-popup">
+        {options.length === 0 ? (
+          <p className="filter-empty">No options available</p>
+        ) : (
+          options.map((option) => (
+            <label key={option} className="filter-option">
+              <input
+                type="checkbox"
+                checked={selected.includes(option)}
+                onChange={() => onToggle(option)}
+              />
+              <span>{option}</span>
+            </label>
+          ))
+        )}
+      </div>
+    </details>
   );
 }
 
