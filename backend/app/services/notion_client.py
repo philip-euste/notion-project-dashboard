@@ -1,5 +1,5 @@
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import httpx
@@ -129,6 +129,31 @@ def update_notion_page(
         response.raise_for_status()
 
         return response.json()
+
+
+def update_notion_github_last_updated(
+    page_id: str,
+    pushed_at: datetime,
+    client: httpx.Client,
+) -> dict[str, Any]:
+    payload = {
+        "properties": {
+            "GitHub Last Updated": {
+                "date": {
+                    "start": pushed_at.isoformat()
+                }
+            }
+        }
+    }
+
+    response = client.patch(
+        f"{NOTION_BASE_URL}/pages/{page_id}",
+        headers=get_notion_headers(),
+        json=payload,
+    )
+    response.raise_for_status()
+
+    return response.json()
 
 
 def archive_notion_page(page_id: str) -> dict[str, Any]:
