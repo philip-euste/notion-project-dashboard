@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   getProjects,
   createProject,
+  updateProject,
 } from "./services/api";
 import "./App.css";
 
@@ -58,6 +59,7 @@ function App() {
   const [form, setForm] = useState(INITIAL_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState("");
+  const [editingProjectId, setEditingProjectId] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -120,6 +122,34 @@ function App() {
     });
   }
 
+  function handleEdit(project) {
+    setEditingProjectId(project.id);
+
+    setForm({
+      name: project.name || "",
+      status_group: project.status_group || "To-do",
+      status: project.status || "Unknown",
+      priority: project.priority || "",
+      potential: project.potential || "",
+      next_possible_action: project.next_possible_action || "",
+      repository: project.repository || "",
+      ide: project.ide?.join(", ") || "",
+      skills: project.skills?.join(", ") || "",
+      last_updated: project.last_updated?.slice(0, 10) || "",
+    });
+
+    setError(null);
+    setSuccess("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function handleCancelEdit() {
+    setEditingProjectId(null);
+    setForm(INITIAL_FORM);
+    setError(null);
+    setSuccess("");
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
 
@@ -146,11 +176,30 @@ function App() {
     };
 
     try {
-      const newProject = await createProject(projectData);
+      if (editingProjectId) {
+        const updatedProject = await updateProject(
+          editingProjectId,
+          projectData
+        );
 
-      setProjects((previous) => [newProject, ...previous]);
+        setProjects((previous) =>
+          previous.map((project) =>
+            project.id === editingProjectId
+              ? updatedProject
+              : project
+          )
+        );
+
+        setSuccess("Project updated successfully.");
+        setEditingProjectId(null);
+      } else {
+        const newProject = await createProject(projectData);
+
+        setProjects((previous) => [newProject, ...previous]);
+        setSuccess("Project created successfully.");
+      }
+
       setForm(INITIAL_FORM);
-      setSuccess("Project created successfully.");
     } catch (error) {
       setError(error.message);
     } finally {
@@ -188,7 +237,9 @@ function App() {
       </section>
 
       <section className="create-project">
-        <h2>Create Project</h2>
+        <h2>
+          {editingProjectId ? "Edit Project" : "Create Project"}
+        </h2>
 
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
@@ -319,8 +370,20 @@ function App() {
           </div>
 
           <button type="submit" disabled={submitting}>
-            {submitting ? "Creating..." : "Create Project"}
+            {submitting
+              ? editingProjectId ? "Updating..." : "Creating..."
+              : editingProjectId ? "Update Project" : "Create Project"}
           </button>
+
+          {editingProjectId && (
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              disabled={submitting}
+            >
+              Cancel Edit
+            </button>
+          )}
         </form>
 
         {success && <p className="success-message">{success}</p>}
@@ -348,6 +411,7 @@ function App() {
                 <th>Potential</th>
                 <th>IDE</th>
                 <th>Skills</th>
+                <th>Actions</th>
               </tr>
             </thead>
 
@@ -362,6 +426,14 @@ function App() {
                   <td>{project.potential || "—"}</td>
                   <td>{project.ide?.join(", ") || "—"}</td>
                   <td>{project.skills?.join(", ") || "—"}</td>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(project)}
+                    >
+                      Edit
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
