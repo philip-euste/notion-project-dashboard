@@ -48,27 +48,57 @@ const INITIAL_FORM = {
   last_updated: "",
 };
 
+const REFRESH_INTERVAL = 30_000;
+
 function App() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
   const [error, setError] = useState(null);
   const [form, setForm] = useState(INITIAL_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
+    let isMounted = true;
+    let isFetching = false;
+
     async function loadProjects() {
+      if (isFetching) return;
+
+      isFetching = true;
+
       try {
         const data = await getProjects();
-        setProjects(data);
+
+        if (isMounted) {
+          setProjects(data);
+          setFetchError("");
+        }
       } catch (error) {
-        setError(error.message);
+        if (isMounted) {
+          setFetchError(error.message);
+        }
       } finally {
-        setLoading(false);
+        isFetching = false;
+
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
     loadProjects();
+
+    const interval = setInterval(
+      loadProjects,
+      REFRESH_INTERVAL
+    );
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   function handleChange(event) {
@@ -299,6 +329,12 @@ function App() {
 
       <section className="project-list">
         <h2>All Projects</h2>
+
+        {fetchError && (
+          <p className="error-message">
+            Could not refresh projects: {fetchError}
+          </p>
+        )}
 
         {loading ? (
           <p>Loading projects...</p>
