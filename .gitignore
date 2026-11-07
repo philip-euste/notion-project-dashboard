@@ -56,3 +56,4 @@ logs/
 
 # Test and coverage artifacts
 coverage/
+.neon
