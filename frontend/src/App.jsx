@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getProjects,
   createProject,
@@ -62,6 +62,11 @@ function App() {
   const [deletingProjectId, setDeletingProjectId] = useState(null);
   const [success, setSuccess] = useState("");
   const [editingProjectId, setEditingProjectId] = useState(null);
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [priorityFilter, setPriorityFilter] = useState("All");
+  const [sortOrder, setSortOrder] = useState("default");
 
   useEffect(() => {
     let isMounted = true;
@@ -239,6 +244,75 @@ function App() {
       setDeletingProjectId(null);
     }
   }
+
+  const filteredProjects = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    const result = projects.filter((project) => {
+      const searchableFields = [
+        project.name,
+        project.status,
+        project.status_group,
+        project.priority,
+        project.potential,
+        project.next_possible_action,
+        project.repository,
+        ...(project.ide || []),
+        ...(project.skills || []),
+      ];
+
+      const matchesSearch =
+        !normalizedSearch ||
+        searchableFields.some((field) =>
+          String(field || "")
+            .toLowerCase()
+            .includes(normalizedSearch)
+        );
+
+      const matchesStatus =
+        statusFilter === "All" ||
+        project.status_group === statusFilter;
+
+      const matchesPriority =
+        priorityFilter === "All" ||
+        project.priority === priorityFilter;
+
+      return matchesSearch && matchesStatus && matchesPriority;
+    });
+
+    switch (sortOrder) {
+      case "name-asc":
+        result.sort((a, b) =>
+          (a.name || "").localeCompare(b.name || "")
+        );
+        break;
+
+      case "name-desc":
+        result.sort((a, b) =>
+          (b.name || "").localeCompare(a.name || "")
+        );
+        break;
+
+      case "date-desc":
+        result.sort((a, b) =>
+          (b.last_updated || "").localeCompare(a.last_updated || "")
+        );
+        break;
+
+      case "date-asc":
+        result.sort((a, b) =>
+          (a.last_updated || "9999-12-31").localeCompare(
+            b.last_updated || "9999-12-31"
+          )
+        );
+        break;
+
+      default:
+        break;
+    }
+
+    return result;
+  }, [projects, search, statusFilter, priorityFilter, sortOrder]);
 
   const counts = {
     total: projects.length,
@@ -432,8 +506,62 @@ function App() {
           </p>
         )}
 
+        <div className="project-controls">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search projects..."
+            aria-label="Search projects"
+          />
+
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            aria-label="Filter by status group"
+          >
+            <option value="All">All Status Groups</option>
+            {Object.keys(STATUS_OPTIONS).map((group) => (
+              <option key={group} value={group}>
+                {group}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={priorityFilter}
+            onChange={(event) => setPriorityFilter(event.target.value)}
+            aria-label="Filter by priority"
+          >
+            <option value="All">All Priorities</option>
+            {PRIORITY_OPTIONS.map((priority) => (
+              <option key={priority} value={priority}>
+                {priority}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={sortOrder}
+            onChange={(event) => setSortOrder(event.target.value)}
+            aria-label="Sort projects"
+          >
+            <option value="default">Default Order</option>
+            <option value="name-asc">Name (A–Z)</option>
+            <option value="name-desc">Name (Z–A)</option>
+            <option value="date-desc">Last Updated (Newest)</option>
+            <option value="date-asc">Last Updated (Oldest)</option>
+          </select>
+        </div>
+
+        <p className="result-count">
+          Showing {filteredProjects.length} of {projects.length} projects
+        </p>
+
         {loading ? (
           <p>Loading projects...</p>
+        ) : filteredProjects.length === 0 ? (
+          <p>No projects match your search or filters.</p>
         ) : (
           <table>
             <thead>
@@ -449,7 +577,7 @@ function App() {
             </thead>
 
             <tbody>
-              {projects.map((project) => (
+              {filteredProjects.map((project) => (
                 <tr key={project.id}>
                   <td className="project-name">
                     {project.name || "Untitled project"}
