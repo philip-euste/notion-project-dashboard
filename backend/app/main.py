@@ -1,10 +1,12 @@
-
 from fastapi import FastAPI
+
+from app.api.projects import router as projects_router
+
 
 app = FastAPI(
     title="Notion Project Dashboard",
     description="Project management dashboard API",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 
@@ -20,3 +22,6 @@ def health_check():
     return {
         "status": "healthy"
     }
+
+
+app.include_router(projects_router)

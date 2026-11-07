@@ -1,11 +1,16 @@
-
 import uuid
 
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, String, Text, func
+from sqlalchemy import (
+    Date,
+    DateTime,
+    String,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import Uuid
 
 from app.database.connection import Base
 
@@ -51,14 +56,12 @@ class Project(Base):
         nullable=True,
     )
 
-    # Notion integration
     notion_page_id: Mapped[str | None] = mapped_column(
         String(36),
         unique=True,
         nullable=True,
     )
 
-    # Synchronization tracking
     last_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
