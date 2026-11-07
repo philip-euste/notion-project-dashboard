@@ -1,3 +1,4 @@
+
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,6 +16,8 @@ class Settings(BaseSettings):
     notion_api_key: str | None = None
     notion_database_id: str | None = None
 
+    sync_secret: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
@@ -22,4 +25,4 @@ class Settings(BaseSettings):
     )
 
 
-settings = Settings() # type: ignore[call-arg]
+settings = Settings()  # type: ignore[call-arg]

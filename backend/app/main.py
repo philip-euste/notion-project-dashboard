@@ -1,6 +1,8 @@
+
 from fastapi import FastAPI
 
 from app.api.projects import router as projects_router
+from app.api.sync import router as sync_router
 
 
 app = FastAPI(
@@ -25,3 +27,4 @@ def health_check():
 
 
 app.include_router(projects_router)
+app.include_router(sync_router)
