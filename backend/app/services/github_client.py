@@ -1,3 +1,4 @@
+
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
@@ -12,6 +13,7 @@ GITHUB_API_URL = "https://api.github.com"
 
 CACHE_DURATION = timedelta(hours=6)
 RETRY_DELAY = timedelta(minutes=15)
+BATCH_SIZE = 40
 
 
 def parse_github_repository(
@@ -51,6 +53,18 @@ def parse_github_repository(
 
 
 def get_retry_delay(response: httpx.Response) -> timedelta:
+    retry_after = response.headers.get("Retry-After")
+
+    if retry_after:
+        try:
+            return max(
+                RETRY_DELAY,
+                timedelta(seconds=float(retry_after)),
+            )
+
+        except (ValueError, OverflowError):
+            pass
+
     reset_timestamp = response.headers.get("X-RateLimit-Reset")
 
     if reset_timestamp:
@@ -73,34 +87,35 @@ def get_retry_delay(response: httpx.Response) -> timedelta:
     return RETRY_DELAY
 
 
+def is_rate_limited(response: httpx.Response) -> bool:
+    if response.status_code == 429:
+        return True
+
+    if response.status_code != 403:
+        return False
+
+    remaining = response.headers.get("X-RateLimit-Remaining")
+
+    if remaining == "0":
+        return True
+
+    if response.headers.get("Retry-After"):
+        return True
+
+    return "secondary rate limit" in response.text.lower()
+
+
 def refresh_project_github_data(
     project: Project,
     client: httpx.Client,
 ) -> tuple[str, timedelta | None]:
     now = datetime.now(timezone.utc)
 
-    if not project.repository:
-        changed = (
-            project.github_pushed_at is not None
-            or project.github_last_checked_at is not None
-        )
-
-        project.github_pushed_at = None
-        project.github_last_checked_at = None
-
-        return ("cleared" if changed else "skipped"), None
-
-    if (
-        project.github_last_checked_at
-        and now - project.github_last_checked_at < CACHE_DURATION
-    ):
-        return "cached", None
-
     repository = parse_github_repository(project.repository)
 
     if repository is None:
-        project.github_pushed_at = None
         project.github_last_checked_at = now
+        project.github_next_check_at = now + CACHE_DURATION
 
         return "invalid", None
 
@@ -114,18 +129,11 @@ def refresh_project_github_data(
     try:
         response = client.get(url)
 
-        if (
-            response.status_code == 429
-            or (
-                response.status_code == 403
-                and response.headers.get("X-RateLimit-Remaining") == "0"
-            )
-        ):
+        if is_rate_limited(response):
             delay = get_retry_delay(response)
 
-            project.github_last_checked_at = (
-                now - CACHE_DURATION + delay
-            )
+            project.github_last_checked_at = now
+            project.github_next_check_at = now + delay
 
             return "rate_limited", delay
 
@@ -148,17 +156,28 @@ def refresh_project_github_data(
                 tzinfo=timezone.utc
             )
 
+        timestamp_changed = (
+            project.github_pushed_at != parsed_timestamp
+        )
+
         project.github_pushed_at = parsed_timestamp
         project.github_last_checked_at = now
+        project.github_next_check_at = now + CACHE_DURATION
+
+        if timestamp_changed:
+            project.github_notion_synced_at = None
 
         return "updated", None
 
-    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
-        # Retry failed requests after 15 minutes instead of
-        # repeatedly calling GitHub on every dashboard refresh.
-        project.github_last_checked_at = (
-            now - CACHE_DURATION + RETRY_DELAY
-        )
+    except (
+        httpx.HTTPError,
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+    ):
+        project.github_last_checked_at = now
+        project.github_next_check_at = now + RETRY_DELAY
 
         return "failed", None
 
@@ -168,25 +187,71 @@ def refresh_github_projects(
 ) -> dict[str, int]:
     now = datetime.now(timezone.utc)
 
-    projects_to_check = [
-        project
-        for project in projects
-        if (
-            not project.github_last_checked_at
-            or now - project.github_last_checked_at >= CACHE_DURATION
-        )
-    ]
-
     results = {
         "total": len(projects),
+        "eligible": 0,
         "checked": 0,
         "updated": 0,
         "failed": 0,
         "invalid": 0,
         "cleared": 0,
-        "cached": len(projects) - len(projects_to_check),
+        "cached": 0,
         "deferred": 0,
+        "no_repository": 0,
     }
+
+    projects_with_repositories = []
+
+    for project in projects:
+        if not project.repository:
+            changed = (
+                project.github_pushed_at is not None
+                or project.github_last_checked_at is not None
+                or project.github_next_check_at is not None
+                or project.github_notion_synced_at is not None
+            )
+
+            if changed:
+                project.github_pushed_at = None
+                project.github_last_checked_at = None
+                project.github_next_check_at = None
+                project.github_notion_synced_at = None
+
+                results["cleared"] += 1
+            else:
+                results["no_repository"] += 1
+
+            continue
+
+        projects_with_repositories.append(project)
+
+    eligible_projects = [
+        project
+        for project in projects_with_repositories
+        if (
+            project.github_next_check_at is None
+            or project.github_next_check_at <= now
+        )
+    ]
+
+    results["eligible"] = len(eligible_projects)
+    results["cached"] = (
+        len(projects_with_repositories) - len(eligible_projects)
+    )
+
+    eligible_projects.sort(
+        key=lambda project: (
+            project.github_last_checked_at is not None,
+            project.github_last_checked_at
+            or datetime.min.replace(tzinfo=timezone.utc),
+            str(project.id),
+        )
+    )
+
+    projects_to_check = eligible_projects[:BATCH_SIZE]
+    remaining_projects = eligible_projects[BATCH_SIZE:]
+
+    results["deferred"] = len(remaining_projects)
 
     if not projects_to_check:
         return results
@@ -214,25 +279,26 @@ def refresh_github_projects(
 
             if status == "rate_limited":
                 results["failed"] += 1
-
-                remaining_projects = projects_to_check[index + 1:]
+                results["checked"] += 1
 
                 retry_at = (
-                    now - CACHE_DURATION + retry_delay
+                    now + retry_delay
                     if retry_delay
-                    else now - CACHE_DURATION + RETRY_DELAY
+                    else now + RETRY_DELAY
                 )
 
-                for remaining_project in remaining_projects:
-                    remaining_project.github_last_checked_at = retry_at
+                unprocessed_projects = (
+                    projects_to_check[index + 1:]
+                    + remaining_projects
+                )
 
-                results["deferred"] += len(remaining_projects)
+                for remaining_project in unprocessed_projects:
+                    remaining_project.github_next_check_at = retry_at
+
+                results["deferred"] = len(unprocessed_projects)
                 break
 
-            if status == "cached":
-                results["cached"] += 1
-
-            elif status == "updated":
+            if status == "updated":
                 results["updated"] += 1
                 results["checked"] += 1
 
@@ -242,13 +308,6 @@ def refresh_github_projects(
 
             elif status == "invalid":
                 results["invalid"] += 1
-                results["checked"] += 1
-
-            elif status == "cleared":
-                results["cleared"] += 1
-                results["checked"] += 1
-
-            elif status == "skipped":
                 results["checked"] += 1
 
     return results

@@ -214,6 +214,8 @@ def sync_notion_projects(db: Session) -> dict[str, int]:
                 if repository_changed:
                     existing.github_pushed_at = None
                     existing.github_last_checked_at = None
+                    existing.github_next_check_at = None
+                    existing.github_notion_synced_at = None
 
                 existing.last_synced_at = sync_timestamp
                 updated += 1

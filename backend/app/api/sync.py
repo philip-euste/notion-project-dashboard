@@ -1,6 +1,7 @@
 
 import hmac
 import time
+from datetime import datetime, timezone
 
 import httpx
 
@@ -66,7 +67,11 @@ def sync_github(
     verify_sync_token(x_sync_token)
 
     try:
-        statement = select(Project).order_by(Project.created_at.desc())
+        statement = select(Project).order_by(
+            Project.github_last_checked_at.asc().nullsfirst(),
+            Project.created_at.asc(),
+        )
+
         projects = db.scalars(statement).all()
 
         result = refresh_github_projects(projects)
@@ -81,7 +86,11 @@ def sync_github(
 
         with httpx.Client(timeout=30.0) as client:
             for project in projects:
-                if not project.notion_page_id or not project.github_pushed_at:
+                if (
+                    not project.notion_page_id
+                    or not project.github_pushed_at
+                    or project.github_notion_synced_at is not None
+                ):
                     notion_results["notion_skipped"] += 1
                     continue
 
@@ -92,9 +101,16 @@ def sync_github(
                         client,
                     )
 
+                    project.github_notion_synced_at = (
+                        datetime.now(timezone.utc)
+                    )
+
+                    db.commit()
+
                     notion_results["notion_updated"] += 1
 
                 except (httpx.HTTPError, ValueError):
+                    db.rollback()
                     notion_results["notion_failed"] += 1
 
                 time.sleep(0.35)

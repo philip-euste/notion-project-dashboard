@@ -123,6 +123,16 @@ class Project(Base):
         nullable=True,
     )
 
+    github_next_check_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    github_notion_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     # Internal synchronization timestamps.
     last_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
